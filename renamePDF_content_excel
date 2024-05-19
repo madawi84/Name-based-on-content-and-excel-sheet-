@@ -1,0 +1,89 @@
+import os
+import pandas as pd
+import re
+import pdfplumber  # Corrected import
+import tkinter as tk
+from tkinter import filedialog, simpledialog
+
+def extract_name(pdf_path):
+    # Open the PDF file
+    with pdfplumber.open(pdf_path) as pdf:
+        # Combine text from all pages (assuming the name could be on any page)
+        full_text = ''
+        for page in pdf.pages:
+            page_text = page.extract_text()
+            if page_text:  # Check if page_text is not None
+                full_text += page_text
+
+        # Regular expression to find the name followed by ", Kindergarten"
+        match = re.search(r'(.+?), Kindergarten', full_text)
+        if match:
+            # Returns the name found before the comma
+            return match.group(1)
+        else:
+            return None  # Return None if no name is found
+
+def find_id_in_excel(name, df):
+    # Assuming 'Name' column holds the full names
+    matched_row = df[df['Name'].str.contains(name, case=False, na=False)]
+    if not matched_row.empty:
+        return matched_row['ID'].values[0]
+    else:
+        return None
+
+def generate_unique_filename(folder, base_name, extension):
+    counter = 1
+    new_filename = f"{base_name}.{extension}"
+    while os.path.exists(os.path.join(folder, new_filename)):
+        new_filename = f"{base_name}({counter}).{extension}"
+        counter += 1
+    return new_filename
+
+def choose_sheet(excel_path):
+    xl = pd.ExcelFile(excel_path)
+    sheet_names = xl.sheet_names
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+    sheet_name = simpledialog.askstring("Sheet Selection", "Choose a sheet:", initialvalue=sheet_names[0])
+    return sheet_name
+
+def main():
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+
+    pdf_folder = filedialog.askdirectory(title="Select the folder containing PDFs")
+    if not pdf_folder:
+        print("No folder selected, exiting.")
+        return
+
+    excel_path = filedialog.askopenfilename(title="Select the Excel workbook", filetypes=[("Excel files", "*.xlsx *.xls")])
+    if not excel_path:
+        print("No Excel file selected, exiting.")
+        return
+
+    sheet_name = choose_sheet(excel_path)
+    if not sheet_name:
+        print("No sheet selected, exiting.")
+        return
+
+    df = pd.read_excel(excel_path, sheet_name=sheet_name)
+
+    for filename in os.listdir(pdf_folder):
+        if filename.endswith('.pdf'):
+            pdf_path = os.path.join(pdf_folder, filename)
+            name = extract_name(pdf_path)  # Corrected function name
+
+            if name:
+                id_ = find_id_in_excel(name, df)
+                if id_:
+                    new_filename = generate_unique_filename(pdf_folder, str(id_), 'pdf')
+                    new_path = os.path.join(pdf_folder, new_filename)
+                    os.rename(pdf_path, new_path)
+                    print(f"Renamed '{filename}' to '{new_filename}'")
+                else:
+                    print(f"No ID found for {name}")
+            else:
+                print(f"Could not extract name from {filename}")
+
+if __name__ == "__main__":
+    main()
